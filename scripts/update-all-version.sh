@@ -107,6 +107,7 @@ declare -a TYPESCRIPT_FILES=(
     "package.json"
     "packages/sparkling-sdk/package.json"
     "packages/sparkling-method/package.json"
+    "template/sparkling-app-template/package.json"
 )
 
 declare -a IOS_PODSPEC_FILES=(
