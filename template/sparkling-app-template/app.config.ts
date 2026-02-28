@@ -41,7 +41,7 @@ const config: AppConfig = {
   },
   paths: {
     androidAssets: 'android/app/src/main/assets',
-    iosAssets: 'ios/SparklingGo/SparklingGo/Resources/Assets',
+    iosAssets: 'ios/LynxResources',
   },
   appIcon: './resource/app_icon.png',
   router: {

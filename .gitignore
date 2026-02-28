@@ -22,7 +22,7 @@ docs/**/*.html
 # npm can publish it correctly. Git won't recognise it, so we duplicate the
 # necessary ignore rules here for local development.
 template/sparkling-app-template/android/app/src/main/assets/
-template/sparkling-app-template/ios/SparklingGo/SparklingGo/Resources/Assets/
+template/sparkling-app-template/ios/LynxResources
 template/sparkling-app-template/.sparkling/
 template/sparkling-app-template/android/**/build/
 template/sparkling-app-template/android/.gradle/

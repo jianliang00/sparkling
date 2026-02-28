@@ -57,7 +57,7 @@ export default defineConfig({
         api.onAfterBuild(() => {
           const sourceDir = 'dist'
           const androidDest = 'android/app/src/main/assets'
-          const iosDest = 'ios/SparklingGo/SparklingGo/Resources/Assets'
+          const iosDest = 'ios/LynxResources'
 
           console.log(`Copying ${sourceDir} to Android (${androidDest})...`)
           copyDir(sourceDir, androidDest)

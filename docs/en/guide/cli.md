@@ -59,7 +59,7 @@ npx sparkling copy-assets
 | --- | --- |
 | `--source <path>` | Path to compiled assets (default: `dist`) |
 | `--android-dest <path>` | Android asset destination (default: `android/app/src/main/assets`) |
-| `--ios-dest <path>` | iOS asset destination (default: `ios/SparklingGo/SparklingGo/Resources/Assets`) |
+| `--ios-dest <path>` | iOS asset destination (default: `ios/LynxResources`) |
 
 ### `sparkling autolink`
 

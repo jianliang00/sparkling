@@ -59,7 +59,7 @@ npx sparkling copy-assets
 | --- | --- |
 | `--source <path>` | 编译产物路径（默认：`dist`） |
 | `--android-dest <path>` | Android 资源目标路径（默认：`android/app/src/main/assets`） |
-| `--ios-dest <path>` | iOS 资源目标路径（默认：`ios/SparklingGo/SparklingGo/Resources/Assets`） |
+| `--ios-dest <path>` | iOS 资源目标路径（默认：`ios/LynxResources`） |
 
 ### `sparkling autolink`
 
