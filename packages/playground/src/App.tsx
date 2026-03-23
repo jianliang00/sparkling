@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from '@lynx-js/react';
+import { useCallback, useEffect, useState } from '@lynx-js/react'
+import { SafeAreaView } from './components/SafeAreaView.js'
 import SwitchButton from './components/SwitchButton.js';
 
 import * as media from 'sparkling-media';
@@ -237,7 +238,7 @@ export function App(props: {
   ];
 
   return (
-    <view>
+    <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1 }}>
       <view className='App'>
         <view className='Banner'>
           <view className='Logo' >
@@ -273,7 +274,7 @@ export function App(props: {
               bindinput={handleInput}
               placeholder="second.lynx.bundle or http://ip:3000/main.lynx.bundle"
               value={bundlePath}
-              text-color='#000000'
+              text-color='#ffffff'
             />
           </view>
           <view className='expandable-list'>
@@ -305,6 +306,6 @@ export function App(props: {
           </view>
         </view>
       </view>
-    </view>
+    </SafeAreaView>
   )
 }

@@ -6,6 +6,22 @@
 import type { BaseEvent, StandardProps } from '@lynx-js/types';
 
 declare module '@lynx-js/types' {
+  interface GlobalProps {
+    preferredTheme?: string;
+    theme: string;
+    isNotchScreen: boolean;
+    /** Sparkling native: screen, OS, safe-area (see SPKGlobalPropsUtils / GlobalPropsUtils). */
+    os?: string;
+    screenWidth?: number;
+    screenHeight?: number;
+    statusBarHeight?: number;
+    topHeight?: number;
+    bottomHeight?: number;
+    contentHeight?: number;
+    safeAreaHeight?: number;
+    navigationBarHeight?: number;
+  }
+
   interface IntrinsicElements extends Lynx.IntrinsicElements {
     input: InputProps;
   }
