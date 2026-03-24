@@ -10,6 +10,7 @@ dist/
 output/
 output_resource/
 **/doc_build
+**/*.lynx.bundle
 
 docs/**/*.html
 
@@ -21,8 +22,8 @@ docs/**/*.html
 # Template: the template's .gitignore is stored without a leading dot so that
 # npm can publish it correctly. Git won't recognise it, so we duplicate the
 # necessary ignore rules here for local development.
-template/sparkling-app-template/android/app/src/main/assets/
-template/sparkling-app-template/ios/LynxResources
+template/sparkling-app-template/android/app/src/main/assets/static/
+template/sparkling-app-template/ios/LynxResources/static/
 template/sparkling-app-template/.sparkling/
 template/sparkling-app-template/android/**/build/
 template/sparkling-app-template/android/.gradle/

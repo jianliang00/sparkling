@@ -77,3 +77,4 @@ fastlane/test_output/
 *.rej
 
 LynxResources/Assets
+**/*.lynx.bundle

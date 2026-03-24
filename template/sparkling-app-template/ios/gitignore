@@ -76,3 +76,5 @@ fastlane/test_output/
 # Misc
 *.orig
 *.rej
+
+**/*.lynx.bundle

@@ -27,6 +27,9 @@ Edit `src/pages/` — the app hot reloads.
 From the repository root:
 
 ```bash
+# Build Lynx bundles first (required for native app resources)
+pnpm --filter sparkling-playground build
+
 # Android
 npx sparkling run:android
 

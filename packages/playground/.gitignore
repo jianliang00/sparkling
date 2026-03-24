@@ -5,6 +5,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+**/*.lynx.bundle
+.sparkling/
 
 # Android SDK artifacts
 android/.gradle/

@@ -9,6 +9,7 @@ android/.gradle/
 ios/build/
 ios/DerivedData/
 ios/Pods/
+**/*.lynx.bundle
 
 # IDE
 .vscode/
