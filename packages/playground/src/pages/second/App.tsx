@@ -44,6 +44,14 @@ export function App(props: {
     }).join('\n')
   }, [])
 
+  const getQueryItemsString = useCallback(() => {
+    const queryItems = (lynx.__globalProps as Record<string, any> | undefined)?.queryItems
+    if (!queryItems || typeof queryItems !== 'object') {
+      return ''
+    }
+    return Object.keys(queryItems).map((key) => `${key}: ${queryItems[key]}`).join('\n')
+  }, [])
+
 
   return (
     // Top inset is applied by native SPKNavigationBar; only pad bottom (e.g. home indicator).
@@ -59,6 +67,13 @@ export function App(props: {
           <text className='Button' bindtap={getStorageItem}>
             Get StorageItem  {data}
           </text>
+          <scroll-view scroll-orientation='vertical' style={{ maxHeight: '120px' }}>
+            <text className='GlobalProps'>
+              {
+                'queryItems: \n \n' + getQueryItemsString()
+              }
+            </text>
+          </scroll-view>
           <scroll-view scroll-orientation='vertical'>
             <text className='GlobalProps'>
               {

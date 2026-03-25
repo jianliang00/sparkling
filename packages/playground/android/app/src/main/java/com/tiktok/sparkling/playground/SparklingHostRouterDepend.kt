@@ -26,6 +26,13 @@ class SparklingHostRouterDepend: IHostRouterDepend {
 
         val sparklingContext = SparklingContext()
         sparklingContext.scheme = scheme
+        val rawExtra = extraParams["extra"] as? Map<*, *>
+        sparklingContext.extra = rawExtra
+            ?.mapNotNull { (key, value) ->
+                val k = key?.toString() ?: return@mapNotNull null
+                k to (value?.toString() ?: "")
+            }
+            ?.toMap()
         context?.let {  Sparkling.Companion.build(it, sparklingContext).navigate() }
         return true
     }

@@ -48,13 +48,17 @@ export function App(props: {
 
   const routerOpen = () => {
     if (isHTTPURL(bundlePath)) {
-      // For HTTP URLs (e.g. dev server), use router.open() with a hybrid scheme
+      // For HTTP URLs (e.g. dev server), pass a hybrid scheme and forward route params via `extra`.
       const encoded = encodeURIComponent(bundlePath);
       const params = buildQueryParams();
-      const extra = Object.entries(params).map(([k, v]) => `&${k}=${v}`).join('');
-      const scheme = `hybrid://lynxview?url=${encoded}${extra}`;
+      const scheme = `hybrid://lynxview?url=${encoded}`;
       router.open(
-        { scheme },
+        {
+          scheme,
+          options: {
+            extra: params,
+          },
+        },
         (v: OpenResponse) => {
           console.log('v', v);
           setApiResponse(`Router Open: ${JSON.stringify(v)}`);
@@ -74,6 +78,26 @@ export function App(props: {
         }
       );
     }
+  };
+
+  const openSchemeQueryItemsDemo = () => {
+    const scheme = 'hybrid://lynxview?bundle=second.lynx.bundle&title=Scheme%20Parse%20Demo&from_scheme=1&shared_key=scheme';
+    router.open(
+      {
+        scheme,
+        options: {
+          extra: {
+            from_extra: '1',
+            shared_key: 'extra',
+            query_items_demo: '1',
+          },
+        },
+      },
+      (v: OpenResponse) => {
+        console.log('Scheme queryItems demo opened:', v);
+        setApiResponse(`Scheme QueryItems Demo: ${JSON.stringify(v)}`);
+      },
+    );
   };
 
   const setStorageItem = () => {
@@ -235,6 +259,7 @@ export function App(props: {
     { id: 9, title: 'chooseImage', api: chooseImage },
     { id: 10, title: 'chooseVideo', api: chooseVideo },
     { id: 11, title: 'takePhoto', api: takePhoto },
+    { id: 13, title: 'schemeQueryItemsDemo', api: openSchemeQueryItemsDemo },
   ];
 
   return (

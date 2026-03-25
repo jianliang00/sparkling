@@ -20,6 +20,17 @@ class RouterServiceImpl: RouterService {
     func openScheme(withParams params: Sparkling_Router.OpenMethodParamModel, completion: @escaping SparklingMethod.PipeMethod.CompletionBlock) {
         let urlString = params.scheme
         let context = SPKContext()
+        if let rawExtra = params.extra as? [String: Any] {
+            var extra: [String: AnyHashable] = [:]
+            for (key, value) in rawExtra {
+                if let hashable = value as? AnyHashable {
+                    extra[key] = hashable
+                } else {
+                    extra[key] = String(describing: value)
+                }
+            }
+            context.extra = extra
+        }
         
         DispatchQueue.main.async {
             if let urlString = urlString,
