@@ -91,6 +91,23 @@ function createMethodModule(
   return moduleDir;
 }
 
+function createLynxExtension(
+  cwd: string,
+  name: string,
+  config: Record<string, unknown>,
+): string {
+  const moduleDir = path.join(cwd, 'node_modules', ...name.split('/'));
+  fs.mkdirpSync(path.join(moduleDir, 'ios'));
+  fs.mkdirpSync(path.join(moduleDir, 'android'));
+
+  const podName = String((config.platforms as any)?.ios?.podName ?? 'Sparkling-Button');
+  fs.writeFileSync(path.join(moduleDir, 'ios', `${podName}.podspec`), `Pod::Spec.new do |s|\n  s.name = '${podName}'\nend`);
+  fs.writeFileSync(path.join(moduleDir, 'android', 'build.gradle.kts'), 'plugins {}');
+  fs.writeFileSync(path.join(moduleDir, 'package.json'), JSON.stringify({ name }, null, 2));
+  fs.writeFileSync(path.join(moduleDir, 'lynx.ext.json'), JSON.stringify(config, null, 2));
+  return moduleDir;
+}
+
 /** Scaffold the minimal iOS + Android project structure. */
 function scaffoldProject(cwd: string, opts?: { podfileContent?: string; settingsContent?: string; buildGradleContent?: string }): void {
   // iOS
@@ -287,6 +304,86 @@ describe('autolink', () => {
       expect(modules).toHaveLength(3);
       const names = modules.map(m => m.name).sort();
       expect(names).toEqual(['sparkling-media', 'sparkling-navigation', 'sparkling-storage']);
+    });
+  });
+
+  describe('lynx extension modules', () => {
+    beforeEach(() => {
+      scaffoldProject(cwd);
+      createLynxExtension(cwd, '@lynxjs/button', {
+        name: '@lynxjs/button',
+        platforms: {
+          android: {
+            packageName: 'com.lynxjs.button',
+            buildGradle: 'android/build.gradle.kts',
+            elements: [{ name: 'native-button', className: 'ButtonElement' }],
+            nativeModules: [
+              { name: 'NativeLocalStorage', className: 'NativeLocalStorageModule', scope: 'global' },
+              { name: 'ToastModule', className: 'com.lynxjs.button.ToastModule', scope: 'view' },
+            ],
+            services: [{ className: 'CustomImageService' }],
+            sparklingMethods: { classes: ['ButtonClickMethod'] },
+          },
+          ios: {
+            importName: 'Sparkling_Button',
+            podspecPath: 'ios/Sparkling-Button.podspec',
+            elements: [{ name: 'native-button', className: 'ButtonElement' }],
+            nativeModules: [{ name: 'NativeLocalStorage', className: 'NativeLocalStorageModule' }],
+            services: [{ className: 'ButtonLogService', protocolName: 'LynxServiceLogProtocol' }],
+            sparklingMethods: { classes: ['ButtonClickMethod'] },
+          },
+        },
+      });
+    });
+
+    it('generates Android runtime registration entries from lynx.ext.json', async () => {
+      await autolink({ cwd, platform: 'android' });
+
+      const registryPath = path.join(cwd, 'android', 'app', 'src', 'main', 'java', 'com', 'test', 'app', 'SparklingAutolink.kt');
+      const registry = fs.readFileSync(registryPath, 'utf8');
+      expect(registry).toContain('SparklingAutolinkRegistry.registerElement("native-button", "com.lynxjs.button.ButtonElement")');
+      expect(registry).toContain('SparklingAutolinkRegistry.registerGlobalModule("NativeLocalStorage", "com.lynxjs.button.NativeLocalStorageModule")');
+      expect(registry).toContain('SparklingAutolinkRegistry.registerViewModule("ToastModule", "com.lynxjs.button.ToastModule")');
+      expect(registry).toContain('SparklingAutolinkRegistry.registerService("com.lynxjs.button.CustomImageService")');
+      expect(registry).toContain('SparklingAutolinkRegistry.registerSparklingMethod("com.lynxjs.button.ButtonClickMethod")');
+
+      const settings = fs.readFileSync(path.join(cwd, 'android', 'settings.gradle.kts'), 'utf8');
+      const gradle = fs.readFileSync(path.join(cwd, 'android', 'app', 'build.gradle.kts'), 'utf8');
+      expect(settings).toContain('"lynxjs-button"');
+      expect(gradle).toContain(':lynxjs-button');
+    });
+
+    it('generates iOS runtime registration entries from lynx.ext.json', async () => {
+      await autolink({ cwd, platform: 'ios' });
+
+      const registryPath = path.join(cwd, 'ios', 'SparklingGo', 'SparklingGo', 'SparklingAutolink.swift');
+      const registry = fs.readFileSync(registryPath, 'utf8');
+      expect(registry).toContain('#if canImport(Sparkling_Button)');
+      expect(registry).toContain('SPKAutolinkRegistry.shared.registerElement(name: "native-button", type: ButtonElement.self)');
+      expect(registry).toContain('SPKAutolinkRegistry.shared.registerModule(name: "NativeLocalStorage", type: NativeLocalStorageModule.self)');
+      expect(registry).toContain('LynxServices.registerService(withProtocol: ButtonLogService.self, protocol: LynxServiceLogProtocol.self)');
+      expect(registry).toContain('MethodRegistry.global.register(methodType: ButtonClickMethod.self)');
+      const podfile = fs.readFileSync(path.join(cwd, 'ios', 'Podfile'), 'utf8');
+      expect(podfile).toContain("pod 'Sparkling-Button'");
+    });
+
+    it('prefers lynx.ext.json over legacy module.config.json for the same package', async () => {
+      const moduleDir = path.join(cwd, 'node_modules', '@lynxjs', 'button');
+      fs.writeFileSync(path.join(moduleDir, 'module.config.json'), JSON.stringify({
+        name: '@lynxjs/button',
+        android: {
+          packageName: 'com.legacy.button',
+          className: 'LegacyButton',
+        },
+      }, null, 2));
+
+      const modules = await autolink({ cwd, platform: 'android' });
+
+      expect(modules).toHaveLength(1);
+      expect(modules[0].android?.elements?.[0]?.className).toBe('com.lynxjs.button.ButtonElement');
+      const registryPath = path.join(cwd, 'android', 'app', 'src', 'main', 'java', 'com', 'test', 'app', 'SparklingAutolink.kt');
+      const registry = fs.readFileSync(registryPath, 'utf8');
+      expect(registry).not.toContain('LegacyButton');
     });
   });
 

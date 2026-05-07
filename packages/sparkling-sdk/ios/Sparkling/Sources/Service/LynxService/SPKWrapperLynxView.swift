@@ -134,6 +134,7 @@ open class SPKWrapperLynxView: LynxView, SPKWrapperLynxViewProtocol {
                 lynxConfig.spk_containerID = containerID
                 lynxConfig.spk_namescope = namescope
                 MethodPipe.setupLynxPipe(config: lynxConfig)
+                SPKAutolinkRegistry.shared.applyModules(to: lynxConfig)
             }
             
             params?.context?.lynxModule?.forEach({ (name: String, params: Any) in

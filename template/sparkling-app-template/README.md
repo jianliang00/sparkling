@@ -62,8 +62,10 @@ This single command updates all native integration points:
 
 | Platform | Files updated |
 |----------|---------------|
-| Android  | `settings.gradle.kts` (project include), `build.gradle.kts` (dependency), `SparklingAutolink.kt` (module registry) |
-| iOS      | `Podfile` (pod entry), `SparklingAutolink.swift` (module registry) |
+| Android  | `settings.gradle.kts` (project include), `build.gradle.kts` (dependency), `SparklingAutolink.kt` (extension registry) |
+| iOS      | `Podfile` (pod entry), `SparklingAutolink.swift` (extension registry) |
+
+Autolink supports RFC-style `lynx.ext.json` native extension packages and remains compatible with existing `module.config.json` Sparkling method packages.
 
 ### 3. Reinstall pods (iOS only)
 

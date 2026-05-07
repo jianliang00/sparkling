@@ -22,6 +22,7 @@ open class SPKLynxService: NSObject, SPKViewRegisterService {
         LynxEnv.sharedInstance().devtoolEnabled = true
         // Enable Lynx LogBox switch
         LynxEnv.sharedInstance().logBoxEnabled = true
+        SPKAutolinkRegistry.shared.applyServicesOnce()
         SPKKit.DIContainer.register(SPKViewRegisterService.self, name: String(SPKHybridEngineType.SPKHybridEngineTypeLynx.rawValue), scope: .transient) {
             SPKLynxService()
         }
@@ -56,6 +57,7 @@ open class SPKLynxService: NSObject, SPKViewRegisterService {
             }
             kitView.register(withUI: element.lynxElementClassName, withName: element.lynxElementName)
         })
+        SPKAutolinkRegistry.shared.applyElements(to: kitView)
         return kitView
     }
 }

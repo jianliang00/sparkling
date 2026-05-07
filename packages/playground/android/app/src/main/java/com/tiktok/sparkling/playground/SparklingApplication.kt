@@ -76,6 +76,7 @@ class SparklingApplication : Application() {
             setLynxConfig(lynxConfig)
         }
         HybridKit.setHybridConfig(hybridConfig, this)
+        SparklingAutolink.register(this)
         HybridKit.initLynxKit()
     }
 

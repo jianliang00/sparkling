@@ -18,6 +18,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         SDImageCodersManager.shared.addCoder(webPCoder)
         
         SPKServiceRegister.registerAll()
+        SparklingAutolink.register()
         SPKExecuteAllPrepareBootTask()
         SPKKit.DIContainer.register(SPKTrackerService.self, scope: ServiceScope.transient) {
             SparklingGoTrackerService()

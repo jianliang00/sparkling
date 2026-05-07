@@ -68,15 +68,60 @@ export interface MethodModuleConfig {
   root: string;
   /** When true, the module is a devtool module: linked with debugImplementation on Android and excluded from release on iOS. */
   devtool?: boolean;
+  /** The source manifest used to discover this extension. */
+  configPath?: string;
+  /** Native extension capability metadata normalized from lynx.ext.json or module.config.json. */
+  elements?: SparklingAutolinkElement[];
+  nativeModules?: SparklingAutolinkNativeModule[];
+  services?: SparklingAutolinkService[];
+  sparklingMethods?: SparklingAutolinkMethod[];
   android?: {
     packageName?: string;
     className?: string;
+    projectName?: string;
     projectDir?: string;
     buildGradle?: string;
+    elements?: SparklingAutolinkElement[];
+    nativeModules?: SparklingAutolinkNativeModule[];
+    services?: SparklingAutolinkService[];
+    sparklingMethods?: SparklingAutolinkMethod[];
   };
   ios?: {
     moduleName?: string;
+    importName?: string;
     className?: string;
     podspecPath?: string;
+    elements?: SparklingAutolinkElement[];
+    nativeModules?: SparklingAutolinkNativeModule[];
+    services?: SparklingAutolinkService[];
+    sparklingMethods?: SparklingAutolinkMethod[];
   };
+}
+
+export type SparklingExtensionConfig = MethodModuleConfig;
+
+export interface SparklingAutolinkElement {
+  name: string;
+  className: string;
+  packageName?: string;
+}
+
+export interface SparklingAutolinkNativeModule {
+  name: string;
+  className: string;
+  packageName?: string;
+  /** Global modules are registered on LynxEnv; view modules are registered on each LynxViewBuilder. */
+  scope?: 'global' | 'view';
+}
+
+export interface SparklingAutolinkService {
+  className: string;
+  packageName?: string;
+  /** iOS service protocol, e.g. LynxServiceLogProtocol. */
+  protocolName?: string;
+}
+
+export interface SparklingAutolinkMethod {
+  className: string;
+  packageName?: string;
 }

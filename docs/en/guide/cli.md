@@ -72,7 +72,7 @@ npx sparkling copy-assets
 
 ### `sparkling autolink`
 
-Discover and link Sparkling method modules for Android and iOS. The CLI scans for `module.config.json` files in the workspace and `node_modules`, then updates Gradle/Podfile config and generates registry files.
+Discover and link Sparkling native extensions for Android and iOS. The CLI prefers RFC-style `lynx.ext.json` manifests and remains compatible with existing `module.config.json` Sparkling method packages, then updates Gradle/Podfile config and generates registry files.
 
 ```bash
 npx sparkling autolink
@@ -84,8 +84,10 @@ npx sparkling autolink
 
 **What it does:**
 
-- **Android** — Updates `settings.gradle(.kts)` and `app/build.gradle(.kts)` with module includes/dependencies, and generates `SparklingAutolink.kt`.
-- **iOS** — Updates the `Podfile` with pod entries and generates `SparklingAutolink.swift`.
+- **Android** — Updates `settings.gradle(.kts)` and `app/build.gradle(.kts)` with module includes/dependencies, and generates `SparklingAutolink.kt` with `register(application)` / `configure(builder)` hooks.
+- **iOS** — Updates the `Podfile` with pod entries and generates `SparklingAutolink.swift` with NativeUI, Native Module, Service, and Sparkling Method registration.
+
+`lynx.ext.json` can declare `elements`, `nativeModules`, `services`, and `sparklingMethods` under `platforms.android` / `platforms.ios`. If both manifests exist in one package, `lynx.ext.json` wins.
 
 ### `sparkling run:android`
 

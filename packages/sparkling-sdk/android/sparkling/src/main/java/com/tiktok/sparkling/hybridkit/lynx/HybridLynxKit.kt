@@ -33,6 +33,7 @@ object HybridLynxKit {
     private const val TAG = "HybridLynxKit"
 
     fun init(application: Application?) {
+        SparklingAutolinkRegistry.loadGenerated(application)
         LynxServiceCenter.inst().registerService(LynxImageService.getInstance())
         LynxServiceCenter.inst().registerService(LynxHttpService)
         if (HybridCommon.hybridConfig?.baseInfoConfig?.isDebug == true) {
@@ -67,6 +68,7 @@ object HybridLynxKit {
         val behaviorBundle = BehaviorBundle {
             ArrayList<Behavior>().apply {
                 lynxConfig?.globalBehaviors?.let { addAll(it) }
+                addAll(SparklingAutolinkRegistry.createBehaviors())
             }
         }
 
@@ -78,6 +80,8 @@ object HybridLynxKit {
             lynxConfig?.templateProvider,
             behaviorBundle
         )
+
+        SparklingAutolinkRegistry.applyGlobal()
 
         // register global LynxModule
         lynxConfig?.globalModules?.entries?.forEach {
@@ -110,6 +114,7 @@ object HybridLynxKit {
         val viewBuilder = LynxViewBuilder()
         val bridge = SparklingBridge()
         bridge.registerLynxModule(viewBuilder, hybridContext.containerId)
+        SparklingAutolinkRegistry.configure(viewBuilder)
         val lynxView =
             SimpleLynxKitView(context, hybridContext, viewBuilder, kitInitParams, lifeCycle)
         bridge.init(

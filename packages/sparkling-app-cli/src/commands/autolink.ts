@@ -5,7 +5,13 @@ import path from 'node:path';
 import fg from 'fast-glob';
 import fs from 'fs-extra';
 import { loadAppConfig } from '../config';
-import { MethodModuleConfig } from '../types';
+import {
+  MethodModuleConfig,
+  SparklingAutolinkElement,
+  SparklingAutolinkMethod,
+  SparklingAutolinkNativeModule,
+  SparklingAutolinkService,
+} from '../types';
 import { relativeTo, toPosixPath } from '../utils/paths';
 import { isVerboseEnabled, verboseLog } from '../utils/verbose';
 import { ui } from '../utils/ui';
@@ -21,6 +27,180 @@ export interface AutolinkOptions {
   cwd: string;
   configFile?: string;
   platform?: 'android' | 'ios' | 'all';
+}
+
+type JsonObject = Record<string, unknown>;
+
+function asObject(value: unknown): JsonObject | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as JsonObject
+    : undefined;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(item => asString(item)).filter((item): item is string => Boolean(item));
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const str = asString(value);
+    if (str) return str;
+  }
+  return undefined;
+}
+
+function isConfigNamed(filePath: string, name: string): boolean {
+  return path.basename(filePath) === name;
+}
+
+function normalizeFullClassName(className: string | undefined, packageName?: string): string | undefined {
+  if (!className) return undefined;
+  if (className.includes('.')) return className;
+  return packageName ? `${packageName}.${className}` : className;
+}
+
+function getPlatformConfig(config: JsonObject, platform: 'android' | 'ios'): JsonObject {
+  const platformMap = asObject(config.platforms);
+  const fromPlatforms = asObject(platformMap?.[platform]);
+  const legacy = asObject(config[platform]);
+  return { ...(legacy ?? {}), ...(fromPlatforms ?? {}) };
+}
+
+function supportsPlatform(config: JsonObject, platform: 'android' | 'ios'): boolean {
+  const platforms = config.platforms;
+  if (Array.isArray(platforms)) {
+    return platforms.includes(platform);
+  }
+  if (asObject(platforms)) {
+    return Boolean(asObject(platforms)?.[platform]);
+  }
+  return Boolean(asObject(config[platform]));
+}
+
+function normalizeEntries<T>(
+  rawEntries: unknown,
+  platformKey: 'android' | 'ios',
+  normalize: (entry: JsonObject) => T | undefined,
+): T[] {
+  const entries = Array.isArray(rawEntries) ? rawEntries : rawEntries ? [rawEntries] : [];
+  const result: T[] = [];
+  for (const rawEntry of entries) {
+    const entry = asObject(rawEntry);
+    if (!entry) continue;
+    const platformEntry = asObject(entry[platformKey]);
+    const normalized = normalize({ ...entry, ...(platformEntry ?? {}) });
+    if (normalized) result.push(normalized);
+  }
+  return result;
+}
+
+function mergeEntries<T extends { name?: string; className?: string }>(base: T[], extra: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const entry of [...base, ...extra]) {
+    const key = `${entry.name ?? ''}:${entry.className ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entry);
+  }
+  return result;
+}
+
+function normalizeElements(
+  rawEntries: unknown,
+  platformKey: 'android' | 'ios',
+  defaultPackage?: string,
+): SparklingAutolinkElement[] {
+  return normalizeEntries(rawEntries, platformKey, entry => {
+    const name = firstString(entry.name, entry.elementName, entry.tagName);
+    const packageName = firstString(entry.packageName, defaultPackage);
+    const className = normalizeFullClassName(firstString(entry.className, entry.uiClass, entry.type), packageName);
+    return name && className ? { name, className, packageName } : undefined;
+  });
+}
+
+function normalizeNativeModules(
+  rawEntries: unknown,
+  platformKey: 'android' | 'ios',
+  defaultPackage?: string,
+): SparklingAutolinkNativeModule[] {
+  return normalizeEntries(rawEntries, platformKey, entry => {
+    const name = firstString(entry.name, entry.moduleName);
+    const packageName = firstString(entry.packageName, defaultPackage);
+    const className = normalizeFullClassName(firstString(entry.className, entry.moduleClass, entry.type), packageName);
+    const rawScope = firstString(entry.scope);
+    const scope = rawScope === 'global' ? 'global' : 'view';
+    return name && className ? { name, className, packageName, scope } : undefined;
+  });
+}
+
+function normalizeServices(
+  rawEntries: unknown,
+  platformKey: 'android' | 'ios',
+  defaultPackage?: string,
+): SparklingAutolinkService[] {
+  return normalizeEntries(rawEntries, platformKey, entry => {
+    const packageName = firstString(entry.packageName, defaultPackage);
+    const className = normalizeFullClassName(firstString(entry.className, entry.serviceClass, entry.type), packageName);
+    const protocolName = firstString(entry.protocolName, entry.protocol);
+    return className ? { className, packageName, protocolName } : undefined;
+  });
+}
+
+function normalizeSparklingMethods(
+  rawEntries: unknown,
+  platformKey: 'android' | 'ios',
+  defaultPackage?: string,
+): SparklingAutolinkMethod[] {
+  const fromArray = normalizeEntries(rawEntries, platformKey, entry => {
+    const packageName = firstString(entry.packageName, defaultPackage);
+    const className = normalizeFullClassName(firstString(entry.className, entry.methodClass, entry.type), packageName);
+    return className ? { className, packageName } : undefined;
+  });
+  const fromClasses = asStringArray(asObject(rawEntries)?.classes).map(className => ({
+    className: normalizeFullClassName(className, defaultPackage) ?? className,
+    packageName: defaultPackage,
+  }));
+  return mergeEntries(fromArray, fromClasses);
+}
+
+function resolveDefaultIosPodspec(moduleRoot: string): string {
+  const iosDir = path.resolve(moduleRoot, 'ios');
+  if (fs.existsSync(iosDir)) {
+    const podspecs = fs.readdirSync(iosDir)
+      .filter(file => file.endsWith('.podspec'))
+      .sort();
+    if (podspecs[0]) return path.join(iosDir, podspecs[0]);
+  }
+  return iosDir;
+}
+
+function resolvePodspecFile(podspecPath: string): string | undefined {
+  if (!fs.existsSync(podspecPath)) return undefined;
+  const stat = fs.statSync(podspecPath);
+  if (stat.isFile()) return podspecPath;
+  if (!stat.isDirectory()) return undefined;
+  const podspecs = fs.readdirSync(podspecPath)
+    .filter(file => file.endsWith('.podspec'))
+    .sort();
+  return podspecs[0] ? path.join(podspecPath, podspecs[0]) : undefined;
+}
+
+function swiftModuleNameFromPodName(podName: string): string {
+  return podName.replace(/[^A-Za-z0-9_]/g, '_');
+}
+
+function normalizeGradleProjectName(name: string): string {
+  return name.replace(/^@/, '').replace(/[^A-Za-z0-9_.-]+/g, '-');
+}
+
+function androidProjectName(module: MethodModuleConfig): string {
+  return module.android?.projectName ?? normalizeGradleProjectName(module.name);
 }
 
 /**
@@ -141,6 +321,144 @@ function findWorkspaceRoot(cwd: string): string | null {
   return null;
 }
 
+function readPackageJsonName(moduleRoot: string): string | undefined {
+  const pkgPath = path.join(moduleRoot, 'package.json');
+  if (!fs.existsSync(pkgPath)) return undefined;
+  try {
+    const pkg = fs.readJSONSync(pkgPath) as JsonObject;
+    return asString(pkg.name);
+  } catch {
+    return undefined;
+  }
+}
+
+function shouldReplaceDiscoveredModule(
+  existing: MethodModuleConfig | undefined,
+  nextConfigPath: string,
+  nextIsNodeModule: boolean,
+): boolean {
+  if (!existing) return true;
+  const existingIsNodeModule = existing.root.includes(`${path.sep}node_modules${path.sep}`);
+  if (existingIsNodeModule && !nextIsNodeModule) return true;
+  if (!existingIsNodeModule && nextIsNodeModule) return false;
+
+  const existingConfigPath = existing.configPath ?? '';
+  if (isConfigNamed(existingConfigPath, 'module.config.json') && isConfigNamed(nextConfigPath, 'lynx.ext.json')) {
+    return true;
+  }
+  return false;
+}
+
+function normalizeDiscoveredConfig(configPath: string, config: JsonObject): MethodModuleConfig | undefined {
+  const moduleRoot = path.dirname(configPath);
+  const name = firstString(config.name, readPackageJsonName(moduleRoot), path.basename(moduleRoot));
+  if (!name) return undefined;
+
+  const hasExplicitPlatforms = Array.isArray(config.platforms) || Boolean(asObject(config.platforms));
+  const includeAndroid = hasExplicitPlatforms ? supportsPlatform(config, 'android') : true;
+  const includeIos = hasExplicitPlatforms ? supportsPlatform(config, 'ios') : true;
+
+  const androidConfig = includeAndroid ? getPlatformConfig(config, 'android') : undefined;
+  const iosConfig = includeIos ? getPlatformConfig(config, 'ios') : undefined;
+
+  const androidPackageName = firstString(androidConfig?.packageName, config.packageName);
+  const iosModuleName = firstString(iosConfig?.moduleName, config.moduleName);
+
+  const androidBuild = androidConfig
+    ? firstString(androidConfig.buildGradle)
+      ? path.resolve(moduleRoot, firstString(androidConfig.buildGradle)!)
+      : resolveDefaultAndroidBuildGradle(moduleRoot)
+    : undefined;
+  const iosPodspecPath = iosConfig
+    ? firstString(iosConfig.podspecPath)
+      ? path.resolve(moduleRoot, firstString(iosConfig.podspecPath)!)
+      : resolveDefaultIosPodspec(moduleRoot)
+    : undefined;
+
+  const topElements = config.elements;
+  const topNativeModules = config.nativeModules ?? config.modules;
+  const topServices = config.services;
+  const topSparklingMethods = config.sparklingMethods;
+
+  const androidElements = androidConfig
+    ? mergeEntries(
+      normalizeElements(topElements, 'android', androidPackageName),
+      normalizeElements(androidConfig.elements, 'android', androidPackageName),
+    )
+    : [];
+  const androidNativeModules = androidConfig
+    ? mergeEntries(
+      normalizeNativeModules(topNativeModules, 'android', androidPackageName),
+      normalizeNativeModules(androidConfig.nativeModules ?? androidConfig.modules, 'android', androidPackageName),
+    )
+    : [];
+  const androidServices = androidConfig
+    ? mergeEntries(
+      normalizeServices(topServices, 'android', androidPackageName),
+      normalizeServices(androidConfig.services, 'android', androidPackageName),
+    )
+    : [];
+  const androidSparklingRaw = asObject(topSparklingMethods)?.android ?? androidConfig?.sparklingMethods ?? topSparklingMethods;
+  const androidSparklingMethods = androidConfig
+    ? normalizeSparklingMethods(androidSparklingRaw, 'android', androidPackageName)
+    : [];
+
+  const iosElements = iosConfig
+    ? mergeEntries(
+      normalizeElements(topElements, 'ios'),
+      normalizeElements(iosConfig.elements, 'ios'),
+    )
+    : [];
+  const iosNativeModules = iosConfig
+    ? mergeEntries(
+      normalizeNativeModules(topNativeModules, 'ios'),
+      normalizeNativeModules(iosConfig.nativeModules ?? iosConfig.modules, 'ios'),
+    )
+    : [];
+  const iosServices = iosConfig
+    ? mergeEntries(
+      normalizeServices(topServices, 'ios'),
+      normalizeServices(iosConfig.services, 'ios'),
+    )
+    : [];
+  const iosSparklingRaw = asObject(topSparklingMethods)?.ios ?? iosConfig?.sparklingMethods ?? topSparklingMethods;
+  const iosSparklingMethods = iosConfig
+    ? normalizeSparklingMethods(iosSparklingRaw, 'ios')
+    : [];
+
+  return {
+    name,
+    root: moduleRoot,
+    configPath,
+    devtool: config.devtool === true,
+    elements: mergeEntries(androidElements, iosElements),
+    nativeModules: mergeEntries(androidNativeModules, iosNativeModules),
+    services: mergeEntries(androidServices, iosServices),
+    sparklingMethods: mergeEntries(androidSparklingMethods, iosSparklingMethods),
+    android: androidConfig && androidBuild ? {
+      packageName: androidPackageName,
+      className: firstString(androidConfig.className, config.className),
+      projectName: firstString(androidConfig.projectName, config.projectName),
+      projectDir: path.dirname(androidBuild),
+      buildGradle: androidBuild,
+      elements: androidElements,
+      nativeModules: androidNativeModules,
+      services: androidServices,
+      sparklingMethods: androidSparklingMethods,
+    } : undefined,
+    ios: iosConfig && iosPodspecPath ? {
+      moduleName: iosModuleName,
+      importName: firstString(iosConfig.importName, iosConfig.swiftModuleName),
+      className: firstString(iosConfig.className, config.className),
+      podspecPath: iosPodspecPath,
+      elements: iosElements,
+      nativeModules: iosNativeModules,
+      services: iosServices,
+      sparklingMethods: iosSparklingMethods,
+    } : undefined,
+  };
+}
+
 async function discoverModules(cwd: string): Promise<MethodModuleConfig[]> {
   if (!cwd || typeof cwd !== 'string') {
     console.warn(ui.warn('discoverModules: cwd must be a non-empty string'));
@@ -168,8 +486,8 @@ async function discoverModules(cwd: string): Promise<MethodModuleConfig[]> {
     searches.push({
       root: workspaceRoot,
       // Scan up to 3 levels deep to cover common monorepo layouts
-      // (e.g. packages/methods/my-method/module.config.json)
-      pattern: '{*/,*/*/,*/*/*/}module.config.json',
+      // (e.g. packages/methods/my-method/lynx.ext.json)
+      pattern: '{*/,*/*/,*/*/*/}{lynx.ext.json,module.config.json}',
       ignore: ['node_modules/**', 'dist/**', '.turbo/**', '.rslib/**'],
     });
   } else if (isVerboseEnabled()) {
@@ -181,8 +499,14 @@ async function discoverModules(cwd: string): Promise<MethodModuleConfig[]> {
   if (fs.existsSync(nodeModulesDir)) {
     searches.push({
       root: nodeModulesDir,
-      // Match both top-level (sparkling-*/module.config.json) and scoped
-      // (@*/sparkling-*/module.config.json) method packages.
+      // lynx.ext.json is the RFC manifest, so scan normal top-level and
+      // scoped packages. module.config.json remains targeted to Sparkling
+      // method package naming to avoid crawling all node_modules recursively.
+      pattern: '{*/,@*/*/}lynx.ext.json',
+      ignore: ['**/dist/**', '**/.turbo/**', '**/.rslib/**'],
+    });
+    searches.push({
+      root: nodeModulesDir,
       pattern: '{sparkling-*/,@*/sparkling-*/}module.config.json',
       ignore: ['**/dist/**', '**/.turbo/**', '**/.rslib/**'],
     });
@@ -225,61 +549,28 @@ async function discoverModules(cwd: string): Promise<MethodModuleConfig[]> {
         continue;
       }
 
-      // Validate config has required structure
-      if (!config || typeof config !== 'object') {
+      const configObject = asObject(config);
+      if (!configObject) {
         console.warn(ui.warn(`Invalid module config at ${configPath}: config must be an object`));
         continue;
       }
 
-      const name: string = (typeof config.name === 'string' && config.name.trim())
-        ? config.name.trim()
-        : path.basename(moduleRoot);
-
-      if (!name) {
+      const normalized = normalizeDiscoveredConfig(configPath, configObject);
+      if (!normalized) {
         console.warn(ui.warn(`Invalid module config at ${configPath}: could not determine module name`));
         continue;
       }
 
       if (isVerboseEnabled()) {
-        verboseLog(`Discovered method module "${name}" at ${moduleRoot}`);
+        verboseLog(`Discovered native extension "${normalized.name}" at ${moduleRoot}`);
       }
 
       const isNodeModule = moduleRoot.includes(`${path.sep}node_modules${path.sep}`);
-
-      const androidConfig = config.android as Record<string, unknown> | undefined;
-      const iosConfig = config.ios as Record<string, unknown> | undefined;
-
-      const androidBuild = (androidConfig?.buildGradle && typeof androidConfig.buildGradle === 'string')
-        ? path.resolve(moduleRoot, androidConfig.buildGradle)
-        : resolveDefaultAndroidBuildGradle(moduleRoot);
-      const iosPodspecPath = (iosConfig?.podspecPath && typeof iosConfig.podspecPath === 'string')
-        ? path.resolve(moduleRoot, iosConfig.podspecPath)
-        : path.resolve(moduleRoot, 'ios');
-
-      const existing = seen.get(name);
-      if (existing && existing.root.includes('node_modules') && !isNodeModule) {
-        // Prefer workspace version over node_modules copy.
-        seen.delete(name);
-      } else if (existing) {
+      const existing = seen.get(normalized.name);
+      if (!shouldReplaceDiscoveredModule(existing, configPath, isNodeModule)) {
         continue;
       }
-
-      seen.set(name, {
-        name,
-        root: moduleRoot,
-        devtool: config.devtool === true,
-        android: {
-          packageName: typeof androidConfig?.packageName === 'string' ? androidConfig.packageName : undefined,
-          className: typeof androidConfig?.className === 'string' ? androidConfig.className : undefined,
-          projectDir: path.dirname(androidBuild),
-          buildGradle: androidBuild,
-        },
-        ios: {
-          moduleName: typeof iosConfig?.moduleName === 'string' ? iosConfig.moduleName : undefined,
-          className: typeof iosConfig?.className === 'string' ? iosConfig.className : undefined,
-          podspecPath: iosPodspecPath,
-        },
-      });
+      seen.set(normalized.name, normalized);
     }
   }
 
@@ -334,7 +625,7 @@ function injectAndroidSettings(settingsPath: string, modules: MethodModuleConfig
   const dsl = detectGradleDsl(settingsPath);
   let content = fs.readFileSync(settingsPath, 'utf8');
   content = content.replace(new RegExp(`${ANDROID_AUTOLINK_START}[\\s\\S]*?${ANDROID_AUTOLINK_END}\\s*`, 'm'), '');
-  content = stripExistingAndroidIncludes(content, modules.map(m => m.name));
+  content = stripExistingAndroidIncludes(content, modules.map(androidProjectName));
 
   if (!modules.length) {
     fs.writeFileSync(settingsPath, content);
@@ -343,7 +634,7 @@ function injectAndroidSettings(settingsPath: string, modules: MethodModuleConfig
 
   const lines = modules.map(module => {
     const rel = relativeTo(projectDir, module.android?.projectDir ?? module.root);
-    return `  "${module.name}" to file("${toPosixPath(rel)}")`;
+    return `  "${androidProjectName(module)}" to file("${toPosixPath(rel)}")`;
   }).join(',\n');
 
   const ktsBlock = [
@@ -360,7 +651,7 @@ function injectAndroidSettings(settingsPath: string, modules: MethodModuleConfig
 
   const groovyLines = modules.map(module => {
     const rel = relativeTo(projectDir, module.android?.projectDir ?? module.root);
-    return `  [name: "${module.name}", dir: file("${toPosixPath(rel)}")]`;
+    return `  [name: "${androidProjectName(module)}", dir: file("${toPosixPath(rel)}")]`;
   }).join(',\n');
 
   const groovyBlock = [
@@ -583,9 +874,10 @@ function injectAndroidDependencies(appGradlePath: string, modules: MethodModuleC
   let content = fs.readFileSync(appGradlePath, 'utf8');
   content = stripAndroidAutolinkBlock(content);
   for (const module of modules) {
+    const projectName = androidProjectName(module);
     const depPatterns = [
-      new RegExp(`\\s*implementation\\s*\\(\\s*project\\(["']:${module.name}["']\\)\\s*\\)\\s*\\n?`, 'g'),
-      new RegExp(`\\s*implementation\\s+project\\(["']:${module.name}["']\\)\\s*\\n?`, 'g'),
+      new RegExp(`\\s*implementation\\s*\\(\\s*project\\(["']:${projectName}["']\\)\\s*\\)\\s*\\n?`, 'g'),
+      new RegExp(`\\s*implementation\\s+project\\(["']:${projectName}["']\\)\\s*\\n?`, 'g'),
     ];
     for (const depPattern of depPatterns) {
       content = content.replace(depPattern, '');
@@ -607,7 +899,7 @@ function injectAndroidDependencies(appGradlePath: string, modules: MethodModuleC
 
   const ktsLines: string[] = [];
   if (regularModules.length) {
-    const depLinesKts = regularModules.map(m => `${innerIndent}    project(":${m.name}")`).join(',\n');
+    const depLinesKts = regularModules.map(m => `${innerIndent}    project(":${androidProjectName(m)}")`).join(',\n');
     ktsLines.push(
       `${innerIndent}listOf(`,
       depLinesKts,
@@ -615,7 +907,7 @@ function injectAndroidDependencies(appGradlePath: string, modules: MethodModuleC
     );
   }
   for (const m of devtoolModules) {
-    ktsLines.push(`${innerIndent}debugImplementation(project(":${m.name}"))`);
+    ktsLines.push(`${innerIndent}debugImplementation(project(":${androidProjectName(m)}"))`);
   }
   const ktsBlock = [
     `${innerIndent}// BEGIN SPARKLING AUTOLINK`,
@@ -625,7 +917,7 @@ function injectAndroidDependencies(appGradlePath: string, modules: MethodModuleC
 
   const groovyLines: string[] = [];
   if (regularModules.length) {
-    const depLinesGroovy = regularModules.map(m => `${innerIndent}    project(":${m.name}")`).join(',\n');
+    const depLinesGroovy = regularModules.map(m => `${innerIndent}    project(":${androidProjectName(m)}")`).join(',\n');
     groovyLines.push(
       `${innerIndent}[`,
       depLinesGroovy,
@@ -633,7 +925,7 @@ function injectAndroidDependencies(appGradlePath: string, modules: MethodModuleC
     );
   }
   for (const m of devtoolModules) {
-    groovyLines.push(`${innerIndent}debugImplementation project(":${m.name}")`);
+    groovyLines.push(`${innerIndent}debugImplementation project(":${androidProjectName(m)}")`);
   }
   const groovyBlock = [
     `${innerIndent}// BEGIN SPARKLING AUTOLINK`,
@@ -685,7 +977,7 @@ function resolvePodName(module: MethodModuleConfig): string {
   // Derive the pod name from the podspec file when available, since the
   // podspec `s.name` is the authoritative CocoaPods identifier.
   if (module.ios?.podspecPath) {
-    const podspecFile = module.ios.podspecPath;
+    const podspecFile = resolvePodspecFile(module.ios.podspecPath) ?? module.ios.podspecPath;
     if (fs.existsSync(podspecFile)) {
       try {
         const content = fs.readFileSync(podspecFile, 'utf8');
@@ -703,7 +995,14 @@ function resolvePodName(module: MethodModuleConfig): string {
 }
 
 function buildPodLine(module: MethodModuleConfig, podfilePath: string): string {
-  const podspecDir = module.ios?.podspecPath ? path.dirname(module.ios.podspecPath) : module.root;
+  const resolvedPodspec = module.ios?.podspecPath ? resolvePodspecFile(module.ios.podspecPath) : undefined;
+  const podspecDir = resolvedPodspec
+    ? path.dirname(resolvedPodspec)
+    : module.ios?.podspecPath
+      ? module.ios.podspecPath.endsWith('.podspec')
+        ? path.dirname(module.ios.podspecPath)
+        : module.ios.podspecPath
+      : module.root;
   const rel = relativeTo(path.dirname(podfilePath), podspecDir);
   const podName = resolvePodName(module);
   return `  pod '${podName}', :path => '${toPosixPath(rel)}'`;
@@ -771,6 +1070,30 @@ function injectPodfile(podfilePath: string, modules: MethodModuleConfig[], proje
   fs.writeFileSync(podfilePath, content);
 }
 
+function quoted(value: string): string {
+  return JSON.stringify(value);
+}
+
+function androidRegisterLines(modules: MethodModuleConfig[]): string[] {
+  const lines: string[] = [];
+  for (const module of modules) {
+    for (const element of module.android?.elements ?? []) {
+      lines.push(`        SparklingAutolinkRegistry.registerElement(${quoted(element.name)}, ${quoted(element.className)})`);
+    }
+    for (const nativeModule of module.android?.nativeModules ?? []) {
+      const registrar = nativeModule.scope === 'global' ? 'registerGlobalModule' : 'registerViewModule';
+      lines.push(`        SparklingAutolinkRegistry.${registrar}(${quoted(nativeModule.name)}, ${quoted(nativeModule.className)})`);
+    }
+    for (const service of module.android?.services ?? []) {
+      lines.push(`        SparklingAutolinkRegistry.registerService(${quoted(service.className)})`);
+    }
+    for (const method of module.android?.sparklingMethods ?? []) {
+      lines.push(`        SparklingAutolinkRegistry.registerSparklingMethod(${quoted(method.className)})`);
+    }
+  }
+  return lines;
+}
+
 function writeAndroidRegistry(modules: MethodModuleConfig[], appPackage: string, cwd: string) {
   const javaDir = path.resolve(cwd, 'android/app/src/main/java', ...appPackage.split('.'));
   fs.ensureDirSync(javaDir);
@@ -780,21 +1103,77 @@ function writeAndroidRegistry(modules: MethodModuleConfig[], appPackage: string,
     const cls = m.android?.className ?? '';
     return `        SparklingAutolinkModule(name = "${m.name}", androidPackage = "${pkg}", className = "${cls}")`;
   }).join(',\n');
+  const registerLines = androidRegisterLines(modules);
 
   const content = [
     `package ${appPackage}`,
     '',
+    'import android.app.Application',
+    'import com.lynx.tasm.LynxViewBuilder',
+    'import com.tiktok.sparkling.hybridkit.lynx.SparklingAutolinkRegistry',
+    '',
     'data class SparklingAutolinkModule(val name: String, val androidPackage: String?, val className: String?)',
     '',
     'object SparklingAutolink {',
+    '    private var registered = false',
+    '',
     '    val modules = listOf(',
     entries,
     '    )',
+    '',
+    '    @JvmStatic',
+    '    fun register(application: Application) {',
+    '        if (registered) return',
+    '        registered = true',
+    '        SparklingAutolinkRegistry.markGeneratedRegistered(application.packageName)',
+    ...(registerLines.length ? registerLines : ['        // No native extensions discovered.']),
+    '    }',
+    '',
+    '    @JvmStatic',
+    '    fun configure(builder: LynxViewBuilder) {',
+    '        SparklingAutolinkRegistry.configure(builder)',
+    '    }',
     '}',
     '',
   ].join('\n');
 
   fs.writeFileSync(filePath, content);
+}
+
+function iosAutolinkImportName(module: MethodModuleConfig): string | undefined {
+  if (!module.ios) return undefined;
+  return module.ios.importName
+    ?? (module.ios.moduleName && module.ios.elements?.length ? module.ios.moduleName : undefined)
+    ?? swiftModuleNameFromPodName(resolvePodName(module));
+}
+
+function hasIosRuntimeEntries(module: MethodModuleConfig): boolean {
+  return Boolean(
+    module.ios?.elements?.length
+    || module.ios?.nativeModules?.length
+    || module.ios?.services?.length
+    || module.ios?.sparklingMethods?.length,
+  );
+}
+
+function iosRegisterLinesForModule(module: MethodModuleConfig): string[] {
+  const lines: string[] = [];
+  for (const element of module.ios?.elements ?? []) {
+    lines.push(`        SPKAutolinkRegistry.shared.registerElement(name: ${quoted(element.name)}, type: ${element.className}.self)`);
+  }
+  for (const nativeModule of module.ios?.nativeModules ?? []) {
+    lines.push(`        SPKAutolinkRegistry.shared.registerModule(name: ${quoted(nativeModule.name)}, type: ${nativeModule.className}.self)`);
+  }
+  for (const service of module.ios?.services ?? []) {
+    if (!service.protocolName) continue;
+    lines.push(`        SPKAutolinkRegistry.shared.registerService {`);
+    lines.push(`            LynxServices.registerService(withProtocol: ${service.className}.self, protocol: ${service.protocolName}.self)`);
+    lines.push('        }');
+  }
+  for (const method of module.ios?.sparklingMethods ?? []) {
+    lines.push(`        MethodRegistry.global.register(methodType: ${method.className}.self)`);
+  }
+  return lines;
 }
 
 function writeIosRegistry(modules: MethodModuleConfig[], bundleId: string, cwd: string) {
@@ -805,10 +1184,28 @@ function writeIosRegistry(modules: MethodModuleConfig[], bundleId: string, cwd: 
     const cls = m.ios?.className ?? '';
     return `SparklingAutolinkModule(name: "${m.name}", iosModuleName: "${moduleName}", className: "${cls}")`;
   }).join(',\n    ');
+  const runtimeModules = modules.filter(hasIosRuntimeEntries);
+  const importLines = runtimeModules
+    .map(module => iosAutolinkImportName(module))
+    .filter((name): name is string => Boolean(name))
+    .filter((name, index, names) => names.indexOf(name) === index)
+    .flatMap(name => [`#if canImport(${name})`, `import ${name}`, '#endif']);
+  const runtimeRegisterLines = runtimeModules.flatMap(module => {
+    const importName = iosAutolinkImportName(module);
+    const lines = iosRegisterLinesForModule(module);
+    if (!lines.length) return [];
+    return importName
+      ? [`        #if canImport(${importName})`, ...lines, '        #endif']
+      : lines;
+  });
 
   const content = [
     '// Generated by sparkling autolink',
     'import Foundation',
+    'import Lynx',
+    'import Sparkling',
+    'import SparklingMethod',
+    ...importLines,
     '',
     'struct SparklingAutolinkModule {',
     '    let name: String',
@@ -820,6 +1217,16 @@ function writeIosRegistry(modules: MethodModuleConfig[], bundleId: string, cwd: 
     'let sparklingAutolinkModules: [SparklingAutolinkModule] = [',
     `    ${entries}`,
     ']',
+    '',
+    'enum SparklingAutolink {',
+    '    private static var registered = false',
+    '',
+    '    static func register() {',
+    '        guard !registered else { return }',
+    '        registered = true',
+    ...(runtimeRegisterLines.length ? runtimeRegisterLines : ['        // No native extensions discovered.']),
+    '    }',
+    '}',
     '',
   ].join('\n');
 
@@ -875,13 +1282,14 @@ export async function autolink(options: AutolinkOptions): Promise<MethodModuleCo
   if (doAndroid) {
     const androidSettings = resolveAndroidSettingsFile(options.cwd);
     const androidAppGradle = resolveAndroidAppGradle(options.cwd);
+    const androidModules = modules.filter(m => m.android);
     if (!androidSettings) {
       console.warn(ui.warn('Android settings.gradle(.kts) not found, skipping android autolink'));
     } else {
       if (isVerboseEnabled()) {
         verboseLog(`Using android settings at ${androidSettings.path} (dsl: ${androidSettings.dsl})`);
       }
-      injectAndroidSettings(androidSettings.path, modules, path.dirname(androidSettings.path));
+      injectAndroidSettings(androidSettings.path, androidModules, path.dirname(androidSettings.path));
     }
     if (!androidAppGradle) {
       console.warn(ui.warn('Android app build.gradle(.kts) not found, skipping android dependency autolink'));
@@ -889,13 +1297,13 @@ export async function autolink(options: AutolinkOptions): Promise<MethodModuleCo
       if (isVerboseEnabled()) {
         verboseLog(`Using android app gradle at ${androidAppGradle.path} (dsl: ${androidAppGradle.dsl})`);
       }
-      injectAndroidDependencies(androidAppGradle.path, modules);
+      injectAndroidDependencies(androidAppGradle.path, androidModules);
     }
   }
 
   if (doIos) {
     const podfile = path.resolve(options.cwd, 'ios/Podfile');
-    injectPodfile(podfile, modules, path.dirname(podfile));
+    injectPodfile(podfile, modules.filter(m => m.ios), path.dirname(podfile));
   }
 
   // Registry files only contain regular method modules — devtool modules
@@ -905,10 +1313,10 @@ export async function autolink(options: AutolinkOptions): Promise<MethodModuleCo
   // Always write registry files so stale entries from previously-linked
   // modules are cleaned up when all method modules are removed.
   if (doAndroid) {
-    writeAndroidRegistry(registryModules, androidPackage, options.cwd);
+    writeAndroidRegistry(registryModules.filter(m => m.android), androidPackage, options.cwd);
   }
   if (doIos) {
-    writeIosRegistry(registryModules, iosBundle, options.cwd);
+    writeIosRegistry(registryModules.filter(m => m.ios), iosBundle, options.cwd);
   }
 
   const platformLabel = platform === 'all' ? 'Android & iOS' : platform.toUpperCase();
